@@ -1,25 +1,3 @@
-/*
- * local.c - Setup a socks5 proxy through remote shadowsocks server
- *
- * Copyright (C) 2013 - 2015, Max Lv <max.c.lv@gmail.com>
- *
- * This file is part of the shadowsocks-libev.
- *
- * shadowsocks-libev is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * shadowsocks-libev is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with shadowsocks-libev; see the file COPYING. If not, see
- * <http://www.gnu.org/licenses/>.
- */
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -1130,6 +1108,22 @@ int main(int argc, char **argv)
 
     struct ev_loop *loop = EV_DEFAULT;
 
+    /****************************************************************************
+    ss-local文件执行后，main函数会在create_and_bind创建和返回本地服务端socket fd，
+    监听本地进程在localhost:1080上的连接请求。
+    ev_io_init用来在fd上注册监听事件以及对应的回调函数，
+    当listenfd上EV_READ发生时，accept_cb被回调。
+    内核在某个fd上准备好数据后，这个fd就是可读的，EV_READ就会在新的轮询中被触发；
+    同样，如果send buffer还有空间，就是可写的，EV_WRITE会被触发。
+    *****************************************************************************/
+    
+    /****************************************************************************
+     * 名词解释：
+     * fd: file description 文件描述符，linux把所有的设备看做文件
+     * cb: callback 回调函数
+     * 本地服务器(server)：本地socks代理，实际上是客户端
+     * 远程服务器(remote)：远程socks代理服务器，实际上是服务器端
+     ****************************************************************************/
     // Setup socket
     int listenfd;
     listenfd = create_and_bind(local_addr, local_port);
@@ -1143,7 +1137,7 @@ int main(int argc, char **argv)
 
     listen_ctx.fd = listenfd;
 
-    ev_io_init(&listen_ctx.io, accept_cb, listenfd, EV_READ);
+    ev_io_init(&listen_ctx.io, accept_cb, listenfd, EV_READ); //监听EV_READ事件，对应回调函数是accept_cb
     ev_io_start(loop, &listen_ctx.io);
 
     // Setup UDP
