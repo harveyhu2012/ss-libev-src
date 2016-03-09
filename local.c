@@ -34,19 +34,12 @@
 #include <unistd.h>
 #include <getopt.h>
 
-#ifndef __MINGW32__
 #include <errno.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <pthread.h>
-#endif
-
-#ifdef LIB_ONLY
-#include <pthread.h>
-#include "shadowsocks.h"
-#endif
 
 #if defined(HAVE_SYS_IOCTL_H) && defined(HAVE_NET_IF_H) && defined(__linux__)
 #include <net/if.h>
@@ -56,10 +49,6 @@
 
 #include <libcork/core.h>
 #include <udns.h>
-
-#ifdef __MINGW32__
-#include "win32.h"
-#endif
 
 #include "netutils.h"
 #include "utils.h"
@@ -80,22 +69,13 @@
 #endif
 
 int verbose = 0;
-#ifdef ANDROID
-int vpn        = 0;
-uint64_t tx    = 0;
-uint64_t rx    = 0;
-ev_tstamp last = 0;
-char *prefix;
-#endif
 
 static int acl  = 0;
 static int mode = TCP_ONLY;
 
 static int fast_open = 0;
 #ifdef HAVE_SETRLIMIT
-#ifndef LIB_ONLY
 static int nofile = 0;
-#endif
 #endif
 
 static int auth = 0;
@@ -119,7 +99,6 @@ static server_t *new_server(int fd, int method);
 
 static struct cork_dllist connections;
 
-#ifndef __MINGW32__
 int setnonblocking(int fd)
 {
     int flags;
@@ -128,8 +107,6 @@ int setnonblocking(int fd)
     }
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
-
-#endif
 
 #ifdef SET_INTERFACE
 int setinterface(int socket_fd, const char *interface_name)
@@ -261,9 +238,6 @@ static void server_recv_cb(EV_P_ ev_io *w, int revents)
 
             // insert shadowsocks header
             if (!remote->direct) {
-#ifdef ANDROID
-                tx += remote->buf->len;
-#endif
                 int err = ss_encrypt(remote->buf, server->e_ctx, BUF_SIZE);
 
                 if (err) {
@@ -275,17 +249,7 @@ static void server_recv_cb(EV_P_ ev_io *w, int revents)
             }
 
             if (!remote->send_ctx->connected) {
-#ifdef ANDROID
-                if (vpn) {
-                    if (protect_socket(remote->fd) == -1) {
-                        ERROR("protect_socket");
-                        close_and_free_remote(EV_A_ remote);
-                        close_and_free_server(EV_A_ server);
-                        return;
-                    }
-                }
-#endif
-
+                
                 remote->buf->idx = 0;
 
                 if (!fast_open || remote->direct) {
@@ -606,18 +570,6 @@ static void server_send_cb(EV_P_ ev_io *w, int revents)
     }
 }
 
-#ifdef ANDROID
-static void stat_update_cb(struct ev_loop *loop)
-{
-    ev_tstamp now = ev_now(loop);
-    if (now - last > 1.0) {
-        send_traffic_stat(tx, rx);
-        last = now;
-    }
-}
-
-#endif
-
 static void remote_timeout_cb(EV_P_ ev_timer *watcher, int revents)
 {
     remote_ctx_t *remote_ctx = (remote_ctx_t *)(((void *)watcher)
@@ -640,10 +592,6 @@ static void remote_recv_cb(EV_P_ ev_io *w, int revents)
     server_t *server              = remote->server;
 
     ev_timer_again(EV_A_ & remote->recv_ctx->watcher);
-
-#ifdef ANDROID
-    stat_update_cb(loop);
-#endif
 
     ssize_t r = recv(remote->fd, server->buf->array, BUF_SIZE, 0);
 
@@ -668,9 +616,6 @@ static void remote_recv_cb(EV_P_ ev_io *w, int revents)
     server->buf->len = r;
 
     if (!remote->direct) {
-#ifdef ANDROID
-        rx += server->buf->len;
-#endif
         int err = ss_decrypt(server->buf, server->d_ctx, BUF_SIZE);
         if (err) {
             LOGE("invalid password or cipher");
@@ -963,7 +908,6 @@ void accept_cb(EV_P_ ev_io *w, int revents)
     ev_io_start(EV_A_ & server->recv_ctx->io);
 }
 
-#ifndef LIB_ONLY
 int main(int argc, char **argv)
 {
     int i, c;
@@ -995,13 +939,8 @@ int main(int argc, char **argv)
 
     USE_TTY();
 
-#ifdef ANDROID
-    while ((c = getopt_long(argc, argv, "f:s:p:l:k:t:m:i:c:b:a:n:P:uvVA",
-                            long_options, &option_index)) != -1) {
-#else
     while ((c = getopt_long(argc, argv, "f:s:p:l:k:t:m:i:c:b:a:n:uvA",
                             long_options, &option_index)) != -1) {
-#endif
         switch (c) {
         case 0:
             if (option_index == 0) {
@@ -1062,14 +1001,6 @@ int main(int argc, char **argv)
         case 'A':
             auth = 1;
             break;
-#ifdef ANDROID
-        case 'V':
-            vpn = 1;
-            break;
-        case 'P':
-            prefix = optarg;
-            break;
-#endif
         }
     }
 
@@ -1162,9 +1093,6 @@ int main(int argc, char **argv)
         LOGI("onetime authentication enabled");
     }
 
-#ifdef __MINGW32__
-    winsock_init();
-#else
     // ignore SIGPIPE
     signal(SIGPIPE, SIG_IGN);
     signal(SIGABRT, SIG_IGN);
@@ -1255,145 +1183,8 @@ int main(int argc, char **argv)
         free(listen_ctx.remote_addr[i]);
     free(listen_ctx.remote_addr);
 
-#ifdef __MINGW32__
-    winsock_cleanup();
-#endif
-
     ev_signal_stop(EV_DEFAULT, &sigint_watcher);
     ev_signal_stop(EV_DEFAULT, &sigterm_watcher);
 
     return 0;
 }
-
-#else
-
-int start_ss_local_server(profile_t profile)
-{
-    srand(time(NULL));
-
-    char *remote_host = profile.remote_host;
-    char *local_addr  = profile.local_addr;
-    char *method      = profile.method;
-    char *password    = profile.password;
-    char *log         = profile.log;
-    int remote_port   = profile.remote_port;
-    int local_port    = profile.local_port;
-    int timeout       = profile.timeout;
-
-    auth      = profile.auth;
-    mode      = profile.mode;
-    fast_open = profile.fast_open;
-    verbose   = profile.verbose;
-
-    char local_port_str[16];
-    char remote_port_str[16];
-    sprintf(local_port_str, "%d", local_port);
-    sprintf(remote_port_str, "%d", remote_port);
-
-    USE_LOGFILE(log);
-
-    if (profile.acl != NULL) {
-        acl = !init_acl(profile.acl, BLACK_LIST);
-    }
-
-    if (local_addr == NULL) {
-        local_addr = "127.0.0.1";
-    }
-
-#ifdef __MINGW32__
-    winsock_init();
-#else
-    // ignore SIGPIPE
-    signal(SIGPIPE, SIG_IGN);
-    signal(SIGABRT, SIG_IGN);
-#endif
-
-    struct ev_signal sigint_watcher;
-    struct ev_signal sigterm_watcher;
-    ev_signal_init(&sigint_watcher, signal_cb, SIGINT);
-    ev_signal_init(&sigterm_watcher, signal_cb, SIGTERM);
-    ev_signal_start(EV_DEFAULT, &sigint_watcher);
-    ev_signal_start(EV_DEFAULT, &sigterm_watcher);
-
-    // Setup keys
-    LOGI("initialize ciphers... %s", method);
-    int m = enc_init(password, method);
-
-    struct sockaddr_storage *storage = malloc(sizeof(struct sockaddr_storage));
-    memset(storage, 0, sizeof(struct sockaddr_storage));
-    if (get_sockaddr(remote_host, remote_port_str, storage, 1) == -1) {
-        return -1;
-    }
-
-    // Setup proxy context
-    struct ev_loop *loop = EV_DEFAULT;
-    listen_ctx_t listen_ctx;
-
-    listen_ctx.remote_num     = 1;
-    listen_ctx.remote_addr    = malloc(sizeof(struct sockaddr *));
-    listen_ctx.remote_addr[0] = (struct sockaddr *)storage;
-    listen_ctx.timeout        = timeout;
-    listen_ctx.method         = m;
-    listen_ctx.iface          = NULL;
-
-    // Setup socket
-    int listenfd;
-    listenfd = create_and_bind(local_addr, local_port_str);
-    if (listenfd < 0) {
-        ERROR("bind()");
-        return -1;
-    }
-    if (listen(listenfd, SOMAXCONN) == -1) {
-        ERROR("listen()");
-        return -1;
-    }
-    setnonblocking(listenfd);
-
-    listen_ctx.fd = listenfd;
-
-    ev_io_init(&listen_ctx.io, accept_cb, listenfd, EV_READ);
-    ev_io_start(loop, &listen_ctx.io);
-
-    // Setup UDP
-    if (mode != TCP_ONLY) {
-        LOGI("udprelay enabled");
-        struct sockaddr *addr = (struct sockaddr *)storage;
-        init_udprelay(local_addr, local_port_str, addr,
-                      get_sockaddr_len(addr), m, auth, timeout, NULL);
-    }
-
-    LOGI("listening at %s:%s", local_addr, local_port_str);
-
-    // Init connections
-    cork_dllist_init(&connections);
-
-    // Enter the loop
-    ev_run(loop, 0);
-
-    if (verbose) {
-        LOGI("closed gracefully");
-    }
-
-    // Clean up
-    if (mode != TCP_ONLY) {
-        free_udprelay();
-    }
-
-    ev_io_stop(loop, &listen_ctx.io);
-    free_connections(loop);
-    close(listen_ctx.fd);
-
-    free(listen_ctx.remote_addr);
-
-#ifdef __MINGW32__
-    winsock_cleanup();
-#endif
-
-    ev_signal_stop(EV_DEFAULT, &sigint_watcher);
-    ev_signal_stop(EV_DEFAULT, &sigterm_watcher);
-
-    // cannot reach here
-    return 0;
-}
-
-#endif
