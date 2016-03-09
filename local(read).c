@@ -1,38 +1,5 @@
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <fcntl.h>
-#include <locale.h>
-#include <signal.h>
-#include <string.h>
-#include <strings.h>
-#include <unistd.h>
-#include <getopt.h>
-
-#include <errno.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <pthread.h>
-
-#if defined(HAVE_SYS_IOCTL_H) && defined(HAVE_NET_IF_H) && defined(__linux__)
-#include <net/if.h>
-#include <sys/ioctl.h>
-#define SET_INTERFACE
-#endif
-
-#include <libcork/core.h>
-#include <udns.h>
-
-#include "netutils.h"
-#include "utils.h"
-#include "socks5.h"
-#include "acl.h"
-#include "local.h"
+// 头文件略
+......
 
 #ifndef EAGAIN
 #define EAGAIN EWOULDBLOCK
@@ -46,12 +13,12 @@
 #define BUF_SIZE 2048
 #endif
 
-int verbose = 0;
+int verbose = 0; // 是否显示调试信息
 
 static int acl  = 0;
 static int mode = TCP_ONLY;
 
-static int fast_open = 0;
+static int fast_open = 0; // TCP快速打开模式，省略握手？
 #ifdef HAVE_SETRLIMIT
 static int nofile = 0;
 #endif
@@ -718,32 +685,6 @@ static remote_t *new_remote(int fd, int timeout)
     return remote;
 }
 
-static void free_remote(remote_t *remote)
-{
-    if (remote->server != NULL) {
-        remote->server->remote = NULL;
-    }
-    if (remote->buf != NULL) {
-        bfree(remote->buf);
-        free(remote->buf);
-    }
-    free(remote->recv_ctx);
-    free(remote->send_ctx);
-    free(remote);
-}
-
-static void close_and_free_remote(EV_P_ remote_t *remote)
-{
-    if (remote != NULL) {
-        ev_timer_stop(EV_A_ & remote->send_ctx->watcher);
-        ev_timer_stop(EV_A_ & remote->recv_ctx->watcher);
-        ev_io_stop(EV_A_ & remote->send_ctx->io);
-        ev_io_stop(EV_A_ & remote->recv_ctx->io);
-        close(remote->fd);
-        free_remote(remote);
-    }
-}
-
 static server_t *new_server(int fd, int method)
 {
     server_t *server;
@@ -780,39 +721,11 @@ static server_t *new_server(int fd, int method)
     return server;
 }
 
-static void free_server(server_t *server)
-{
-    cork_dllist_remove(&server->entries);
-
-    if (server->remote != NULL) {
-        server->remote->server = NULL;
-    }
-    if (server->e_ctx != NULL) {
-        cipher_context_release(&server->e_ctx->evp);
-        free(server->e_ctx);
-    }
-    if (server->d_ctx != NULL) {
-        cipher_context_release(&server->d_ctx->evp);
-        free(server->d_ctx);
-    }
-    if (server->buf != NULL) {
-        bfree(server->buf);
-        free(server->buf);
-    }
-    free(server->recv_ctx);
-    free(server->send_ctx);
-    free(server);
-}
-
-static void close_and_free_server(EV_P_ server_t *server)
-{
-    if (server != NULL) {
-        ev_io_stop(EV_A_ & server->send_ctx->io);
-        ev_io_stop(EV_A_ & server->recv_ctx->io);
-        close(server->fd);
-        free_server(server);
-    }
-}
+// 清理现场，略
+static void free_remote(remote_t *remote) {......}
+static void close_and_free_remote(EV_P_ remote_t *remote) {......}
+static void free_server(server_t *server) {......}
+static void close_and_free_server(EV_P_ server_t *server) {......}
 
 static remote_t *create_remote(listen_ctx_t *listener,
                                struct sockaddr *addr)
@@ -854,6 +767,7 @@ static remote_t *create_remote(listen_ctx_t *listener,
     return remote;
 }
 
+// 停止服务
 static void signal_cb(EV_P_ ev_signal *w, int revents)
 {
     if (revents & EV_SIGNAL) {
@@ -943,8 +857,8 @@ int main(int argc, char **argv)
     // ignore SIGPIPE
     signal(SIGPIPE, SIG_IGN);
     signal(SIGABRT, SIG_IGN);
-#endif
 
+    // 接受中断信号
     struct ev_signal sigint_watcher;
     struct ev_signal sigterm_watcher;
     ev_signal_init(&sigint_watcher, signal_cb, SIGINT);
