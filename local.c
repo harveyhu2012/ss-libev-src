@@ -1096,7 +1096,6 @@ int main(int argc, char **argv)
     // ignore SIGPIPE
     signal(SIGPIPE, SIG_IGN);
     signal(SIGABRT, SIG_IGN);
-#endif
 
     struct ev_signal sigint_watcher;
     struct ev_signal sigterm_watcher;
