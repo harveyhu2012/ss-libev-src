@@ -929,148 +929,17 @@ int main(int argc, char **argv)
             }
             break;
         case 's':
-            if (remote_num < MAX_REMOTE_NUM) {
-                remote_addr[remote_num].host   = optarg;
-                remote_addr[remote_num++].port = NULL;
-            }
-            break;
-        case 'p':
-            remote_port = optarg;
-            break;
-        case 'l':
-            local_port = optarg;
-            break;
-        case 'k':
-            password = optarg;
-            break;
-        case 'f':
-            pid_flags = 1;
-            pid_path  = optarg;
-            break;
-        case 't':
-            timeout = optarg;
-            break;
-        case 'm':
-            method = optarg;
-            break;
-        case 'c':
-            conf_path = optarg;
-            break;
-        case 'i':
-            iface = optarg;
-            break;
-        case 'b':
-            local_addr = optarg;
-            break;
-        case 'a':
-            user = optarg;
-            break;
-#ifdef HAVE_SETRLIMIT
-        case 'n':
-            nofile = atoi(optarg);
-            break;
-#endif
-        case 'u':
-            mode = TCP_AND_UDP;
-            break;
-        case 'v':
-            verbose = 1;
-            break;
-        case 'A':
-            auth = 1;
-            break;
-        }
+        ...... // 读参数，略
     }
-
+    
+    // 以下参数初始化，略
     if (opterr) {
         usage();
         exit(EXIT_FAILURE);
     }
+    ......
 
-    if (argc == 1) {
-        if (conf_path == NULL) {
-            conf_path = DEFAULT_CONF_PATH;
-        }
-    }
-    if (conf_path != NULL) {
-        jconf_t *conf = read_jconf(conf_path);
-        if (remote_num == 0) {
-            remote_num = conf->remote_num;
-            for (i = 0; i < remote_num; i++)
-                remote_addr[i] = conf->remote_addr[i];
-        }
-        if (remote_port == NULL) {
-            remote_port = conf->remote_port;
-        }
-        if (local_addr == NULL) {
-            local_addr = conf->local_addr;
-        }
-        if (local_port == NULL) {
-            local_port = conf->local_port;
-        }
-        if (password == NULL) {
-            password = conf->password;
-        }
-        if (method == NULL) {
-            method = conf->method;
-        }
-        if (timeout == NULL) {
-            timeout = conf->timeout;
-        }
-        if (auth == 0) {
-            auth = conf->auth;
-        }
-        if (fast_open == 0) {
-            fast_open = conf->fast_open;
-        }
-#ifdef HAVE_SETRLIMIT
-        if (nofile == 0) {
-            nofile = conf->nofile;
-        }
-        /*
-         * no need to check the return value here since we will show
-         * the user an error message if setrlimit(2) fails
-         */
-        if (nofile > 1024) {
-            if (verbose) {
-                LOGI("setting NOFILE to %d", nofile);
-            }
-            set_nofile(nofile);
-        }
-#endif
-    }
-
-    if (remote_num == 0 || remote_port == NULL ||
-        local_port == NULL || password == NULL) {
-        usage();
-        exit(EXIT_FAILURE);
-    }
-
-    if (timeout == NULL) {
-        timeout = "60";
-    }
-
-    if (local_addr == NULL) {
-        local_addr = "127.0.0.1";
-    }
-
-    if (pid_flags) {
-        USE_SYSLOG(argv[0]);
-        daemonize(pid_path);
-    }
-
-    if (fast_open == 1) {
-#ifdef TCP_FASTOPEN
-        LOGI("using tcp fast open");
-#else
-        LOGE("tcp fast open is not supported by this environment");
-#endif
-    }
-
-    if (auth) {
-        LOGI("onetime authentication enabled");
-    }
-
+    
     // ignore SIGPIPE
     signal(SIGPIPE, SIG_IGN);
     signal(SIGABRT, SIG_IGN);
